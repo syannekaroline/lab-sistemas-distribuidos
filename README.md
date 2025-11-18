@@ -43,7 +43,7 @@ M., S., W. Richard; Fenner, Bill; Rudoff, Andrew (2008). Programação de Rede U
 
 #### Implementações
 
-* **Solução 1 - Fork:** `[ /q1-fork/server_fork]`
+* **Solução 1 - Fork:** `[ /s1-fork/]`
 
 #### Resultados do Teste de Stress
 
