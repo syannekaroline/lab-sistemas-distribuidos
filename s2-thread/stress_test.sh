@@ -5,7 +5,7 @@ HOST="127.0.0.1"
 PORT="51482" 
 
 # numero de clientes do teste
-NUM_CLIENTS=100 
+NUM_CLIENTS=100000 
 
 echo "Iniciando teste de estresse com $NUM_CLIENTS clientes..."
 

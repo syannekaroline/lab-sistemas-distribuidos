@@ -31,6 +31,65 @@ Na prática, conforme a imagem abaixo, o processo servidor (Pai) opera em um loo
 
 ![texto alternativo](https://private-user-images.githubusercontent.com/87232098/515419686-9dbc58f1-d43c-4274-bdbc-ef5d991a4aee.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjM0MTg4MDEsIm5iZiI6MTc2MzQxODUwMSwicGF0aCI6Ii84NzIzMjA5OC81MTU0MTk2ODYtOWRiYzU4ZjEtZDQzYy00Mjc0LWJkYmMtZWY1ZDk5MWE0YWVlLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTExMTclMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMTE3VDIyMjgyMVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTIyZTg4ZmJhZjg0MGFmY2U5ZDE1YzhkNmI4OGQ4OWJiMjIyMWRiOTY2MTY5ZmNlNWY2ZjljZmVlNzg5YzI4YjkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.y3bGB0OmQpnJnUkMNmZeKsDnC0C4zoS4BQVTljoLLOg)
 
+Além da abordagem baseada em **processos**, outra solução utilizada para lidar com múltiplos clientes é o uso de **threads**, especialmente através de um **pool de threads**. Essa estratégia resolve problemas de custo e eficiência apresentados na técnica que cria um processo-filho por cliente.
+
+> “A bifurcação (fork) é cara. A memória é copiada do pai para o filho […] e mesmo com otimizações como copy-on-write, a operação continua sendo pesada.”  
+> — Stevens et al., 2008
+
+> “É exigido um IPC para passar as informações entre o pai e o filho […]. Retornar informações do filho para o pai dá mais trabalho.”  
+
+As threads são bem mais leves e compartilharem a mesma memória global, o que facilita comunicação entre elas (embora introduza a necessidade de sincronização).
+
+Além disso, conforme o próprio Stevens destaca:
+
+> “É mais rápido pré-bifurcar um pool de filhos do que criar um filho para cada cliente. Em um sistema que suporta threads, é razoável esperar um aumento de velocidade semelhante, por meio da criação de um pool de threads quando o servidor inicia, em vez de criar um novo thread para cada cliente.”
+
+> “O projeto básico desse servidor é criar um pool de threads e então deixar cada thread chamar `accept`. Em vez de ter cada thread bloqueada na chamada de `accept`, utilizaremos um bloqueio de mutex que permite que somente um thread por vez chame `accept`.”
+
+Essa é exatamente a lógica implementada na solução usando pool de threads.
+
+**✔ Como funciona a Solução baseada em Pool de Threads**
+
+1. **Inicialização**
+   - Cria socket TCP, `bind()` e `listen()`.
+   - Cria um pool fixo de threads (`THREAD_POOL_SIZE`) ao iniciar.
+   - Inicializa uma fila circular (`connection_queue`) protegida por `pthread_mutex_t` e `pthread_cond_t`.
+
+2. **Papel da thread principal**
+   - Loop em `accept()` aguardando conexões.
+   - Para cada conexão aceita:
+     - trava o mutex
+     - insere o socket na fila circular (`queue_push`)
+     - atualiza `queue_end = (queue_end + 1) % MAX_QUEUE`
+     - sinaliza uma *worker* (`pthread_cond_signal`)
+     - libera o mutex
+   - A thread principal apenas distribui conexões — não processa o cliente.
+
+3. **Fila Circular**
+   - Usa `queue_start` e `queue_end` com operador `%` para circularidade.
+   - Evita estouro de memória e permite reaproveitamento do buffer fixo.
+   - Acesso protegido por `pthread_mutex_t`.
+
+4. **Threads Trabalhadoras (Workers)**
+   - Cada worker executa:
+     1. trava o mutex
+     2. se a fila estiver vazia → `pthread_cond_wait()`
+     3. retira socket da fila
+     4. libera o mutex
+     5. processa cliente (leitura/resposta/fechamento)
+     6. volta ao início do loop
+   - Threads são reaproveitadas — não são recriadas por cliente.
+
+5. **Sincronização**
+   - `pthread_mutex_t` garante exclusão mútua na fila.
+   - `pthread_cond_t` evita *busy-waiting*; acorda workers quando há trabalho.
+
+6. **Vantagens**
+   - Evita criar thread por cliente → menos overhead.
+   - Reduz consumo de memória e explosão de threads.
+   - Melhor escalabilidade em cargas altas até o limite do hardware.
+   - Menor latência em faixas baixa/média de concorrência (conforme testes de estresse).
+
 **Referências**
 
 M., S., W. Richard; Fenner, Bill; Rudoff, Andrew (2008). Programação de Rede Unix - Api para Soquetes de Rede. 
@@ -44,6 +103,7 @@ M., S., W. Richard; Fenner, Bill; Rudoff, Andrew (2008). Programação de Rede U
 #### Implementações
 
 * **Solução 1 - Fork:** `[ /s1-fork/]`
+* **Solução 2 – Pool de Threads:** `[ /s2-thread-pool/ ]`
 
 #### Resultados do Teste de Stress
 
@@ -62,6 +122,99 @@ O teste foi realizado em uma máquina Dell Inspiron 3501 com 12,0 GiB de RAM e U
 | 12000 |  | | 0m8,331s |
 | 50000 |  | | 2m4,123s |
 | 100000 |  | | 6m37,757s |
+
+Os testes foram realizados separadamente para cada solução. A seguir estão as tabelas, contexto do ambiente de hardware/software e análise dos resultados.
+
+---
+
+**Solução 2 (Pool de Threads)**
+
+Os testes da solução com **pool de threads** foram realizados na seguinte máquina:
+- **Modelo:** Dell Inc. Inspiron 3501  
+- **Memória RAM:** 20,0 GiB  
+- **Processador:** 11th Gen Intel® Core™ i5-1135G7 (8 threads)  
+- **Gráficos:** Intel® Xe Graphics (TGL GT2) / NV138  
+- **Disco:** 1 TB SSD  
+- **Sistema Operacional:** Ubuntu 24.04.2 LTS (64 bits)  
+- **Kernel:** Linux 6.8.0-87-generic  
+- **Interface gráfica:** GNOME 46 (X11)  
+
+A metodologia de teste foi exatamente a mesma usada para a solução fork:
+
+1. O servidor foi iniciado em um terminal.  
+2. Em outro terminal, o script `stress_test.sh` foi executado.  
+3. O script dispara um número variável de clientes (NUM_CLIENTS) em background, simulando requisições simultâneas.  
+4. Os testes foram realizados com os seguintes valores: **100, 500, 1000, 2000, 4000, 8000, 12000, 50000 e 100000 clientes**.  
+5. A duração total (tempo real) foi registrada com o comando `time`.  
+
+**Resultados – Solução 2 (Pool de Threads)**
+
+| Número de clientes | Erros observados (cliente) | Erros observados (servidor) | Duração Total (real) |
+| :--- | :--- | :--- | :--- |
+| 100 | – | – | 0m0,020s |
+| 500 | – | – | 0m0,101s |
+| 1000 | – | – | 0m0,184s |
+| 2000 | – | – | 0m0,431s |
+| 4000 | – | – | 0m0,905s |
+| 8000 | – | – | 0m2,222s |
+| 12000 | – | – | 0m4,912s |
+| 50000 | – | – | 1m34,053s |
+| 100000 | – | – | 7m26,969s |
+
+---
+**📈 Análise dos Resultados**
+
+A comparação entre as duas soluções evidencia diferenças importantes:
+
+**1. Desempenho**
+- O pool de threads foi **drasticamente mais rápido** para cargas de até 12.000 clientes.  
+- A solução fork apresentou tempos mais irregulares, com picos anormais (ex.: 1000 → 2 minutos).  
+- Para cargas muito altas (50.000 e 100.000 clientes), o desempenho das duas soluções se aproxima, mas:
+  - o thread pool ainda é mais rápido até ~50.000 clientes,
+  - e possui comportamento mais estável.
+
+**2. Estabilidade**
+- A solução fork apresentou **erros de “Connection reset by peer”** nas cargas de 1000 e 2000 clientes.
+- A solução com threads **não apresentou erros em nenhum teste**, demonstrando:
+  - menor overhead,  
+  - maior consistência,  
+  - melhor capacidade de processar conexões em alta frequência.
+
+**3. Uso de recursos**
+- A criação de processos tem custos adicionais:
+  - duplicação de descritores,
+  - tabelas de página,
+  - mudança de contexto mais pesada.
+- O pool de threads:
+  - reutiliza threads,
+  - reduz drasticamente overhead,
+  - mantém consumo de memória estável.
+
+**4. Escalabilidade**
+- O modelo fork escalou, mas com instabilidade.
+- O modelo com threads escalou de forma **linear e previsível até o limite de 100.000 clientes**.
+
+---
+
+**🏁 Conclusão**
+
+Os testes demonstram que a **solução baseada em pool de threads é significativamente superior** à solução baseada em fork para o cenário do trabalho.  
+
+Ela apresenta:
+
+- tempos de resposta muito menores,
+- comportamento estável mesmo sob alta carga,
+- ausência de erros de conexão,
+- menor consumo de recursos,
+- maior escalabilidade geral.
+
+Já o fork, apesar de funcional, demonstrou:
+
+- custo elevado para criação de processos,
+- instabilidade em cargas intermediárias,
+- maior variabilidade nos tempos de resposta.
+
+Assim, para sistemas que precisam lidar com dezenas de milhares de requisições simultâneas — como servidores de compilação, APIs paralelas ou servidores TCP concorrentes — **o modelo com pool de threads deve ser preferido**, sendo mais leve, mais rápido e mais estável.
 
 ---
 
