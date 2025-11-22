@@ -214,6 +214,12 @@ Já o fork, apesar de funcional, demonstrou:
 - instabilidade em cargas intermediárias,
 - maior variabilidade nos tempos de resposta.
 
+
+A seguir está o gráfico utilizado na análise dos resultados.  
+A imagem foi gerada a partir dos dados coletados nos testes para as duas soluções (fork e pool de threads):
+
+![Comparação entre fork e pool de threads](/resources/grafico-comparativo.png)
+
 Assim, para sistemas que precisam lidar com dezenas de milhares de requisições simultâneas — como servidores de compilação, APIs paralelas ou servidores TCP concorrentes — **o modelo com pool de threads deve ser preferido**, sendo mais leve, mais rápido e mais estável.
 
 ---
