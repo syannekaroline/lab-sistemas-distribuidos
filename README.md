@@ -230,28 +230,31 @@ Assim, para sistemas que precisam lidar com dezenas de milhares de requisições
 
 #### a. Servidor de Compilação
 
-O servidor implementado utiliza a abordagem de `[Solução escolhida na Questão 2]` e oferece suporte para a compilação e execução da linguagem **[Linguagem Escolhida, ex: C, Python, etc.]**.
+O servidor implementado utiliza a abordagem de `[Solução escolhida na Questão 2]` e oferece suporte para a compilação e execução da linguagem Python.
 
-* **Código-fonte:** `[Link para a pasta/código, ex: /q3/compilation_server/]`
-* **Protocolo de Comunicação:** `[Descreva brevemente como o cliente e o servidor se comunicam. Ex: O cliente envia o código-fonte, o servidor retorna duas mensagens: 1. Saída de Erros, 2. Saída Padrão.]`
+* **Código-fonte:** compile-server/server.c
+* **Protocolo de Comunicação:** 
+
+O protocolo de comunicação entre o Cliente GUI (Python) e o Servidor de Compilação (C) é um protocolo simples baseado em texto/binário de requisição-resposta. Ele utiliza um cabeçalho de modo (Intention Header) para informar ao servidor a ação desejada antes de enviar o código fonte.
+
+O processo de comunicação segue o padrão TCP (Transmission Control Protocol) de sockets orientados a stream: o cliente conecta, envia todos os dados, o servidor processa e envia a resposta, e a conexão é fechada.
 
 #### b.Cliente com Interface Gráfica (GUI) 
 
 Foi desenvolvido um cliente local para Linux com interface gráfica que permite ao usuário interagir com o servidor de compilação.
 
-* **Código-fonte:** `[Link para a pasta/código, ex: /q3/gui_client/]`
-* **Tecnologia/Biblioteca Gráfica:** `[Ex: GTK, Qt, Tkinter, etc.]`
+* **Código-fonte:** compile-server/main.py
+* **Tecnologia/Biblioteca Gráfica:** foi utilizado o `Tkinter`
 * **Funcionalidades Implementadas:**
     * [x] Área para edição de programa.
     * [x] Área para retornar os erros de compilação.
     * [x] Área para retorno da saída do programa.
     * [x] Botão para execução (enviar para o servidor).
-    * [ ] Botão para baixar o programa compilado (desejável).
+    * [x] Botão para baixar o programa compilado (desejável).
 
 #### Screenshot do Cliente
 
-`[Insira aqui uma imagem do seu cliente GUI em funcionamento, similar à Figura 01 do PDF.]`
-`![Screenshot do Cliente GUI](caminho/para/imagem.png)`
+![alt text](resources/image.png)
 
 ---
 
@@ -263,16 +266,27 @@ Foi desenvolvido um cliente local para Linux com interface gráfica que permite 
 * gcc
 * make
 * Bibliotecas de desenvolvimento do GTK (libgtk-3-dev)
-* Python 3.x (para o servidor de compilação)]`
+* Python 3.10 (para a GUI)]`
 
 ### 1. Servidor de Compilação (Questão 3a)
 
+1. Compile o Servidor: Use o gcc conforme instruído no texto.
+
+Bash
 ```bash
-# Navegue até o diretório do servidor
-cd q3/compilation_server/
+gcc servidor_compiler.c -o servidor
+```
+2. Execute o Servidor: Escolha uma porta livre (ex: 51482).
+Bash
 
-# Compile o servidor (ajuste conforme necessário)
-gcc server_q3.c -o server_q3 -lpthread
+```
+./servidor 51482
+```
+O servidor ficará esperando conexões.
 
-# Execute o servidor informando a porta
-./server_q3 9999
+3. Execute o Cliente: Abra um novo terminal (ou use outra máquina na mesma rede, ajustando o IP no código Python). Certifique-se de ter o python3 e o tkinter instalados (geralmente sudo apt-get install python3-tk).
+Bash
+
+```
+python3 cliente_gui.py
+```
